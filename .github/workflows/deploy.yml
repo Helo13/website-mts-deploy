@@ -1,0 +1,76 @@
+name: Deploy to Hostinger
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: "production"
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+  DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+  SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+  HEALTH_PATH: /api/public.php
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'production' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate secrets
+        run: |
+          if [[ -z "${{ env.DEPLOY_HOST }}" ]]; then echo "DEPLOY_HOST is required"; exit 1; fi
+          if [[ -z "${{ env.DEPLOY_USER }}" ]]; then echo "DEPLOY_USER is required"; exit 1; fi
+          if [[ -z "${{ env.SSH_KEY }}" ]]; then echo "DEPLOY_SSH_KEY is required"; exit 1; fi
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ env.SSH_KEY }}
+
+      - name: Backup current production
+        run: |
+          ssh -o StrictHostKeyChecking=no "${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }}" "
+            rm -rf ~/public_html_backup && cp -r ~/public_html ~/public_html_backup
+          "
+          echo "Backup saved to ~/public_html_backup"
+
+      - name: Deploy to production
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.environment == 'production'
+        run: |
+          rsync -avz --delete \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='config/config.php' \
+            --exclude='.env' \
+            ./ \
+            "${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }}:~/public_html/"
+
+      - name: Deploy to staging
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging'
+        run: |
+          rsync -avz --delete \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='config/config.php' \
+            --exclude='.env' \
+            ./ \
+            "${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }}:~/public_html-staging/"
+
+      - name: Health check
+        run: |
+          sleep 5
+          curl -fsS http://${{ env.DEPLOY_HOST }}${{ env.HEALTH_PATH }} | head -c 200
