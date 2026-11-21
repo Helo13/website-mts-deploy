@@ -19,6 +19,7 @@ env:
   DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
   DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
   SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+  DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
   HEALTH_PATH: /api/public.php
 
 jobs:
@@ -37,38 +38,69 @@ jobs:
           if [[ -z "${{ env.SSH_KEY }}" ]]; then echo "DEPLOY_SSH_KEY is required"; exit 1; fi
 
       - name: Setup SSH
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ env.SSH_KEY }}
+        env:
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          PORT: ${{ secrets.DEPLOY_PORT }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          echo "SSH key loaded ($(wc -c < ~/.ssh/deploy_key) bytes)"
+
+      - name: Test SSH connection
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USERNAME: ${{ secrets.DEPLOY_USER }}
+          PORT: ${{ secrets.DEPLOY_PORT }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "$PORT" -o StrictHostKeyChecking=no \
+            "${{ secrets.DEPLOY_USER }}@$HOST" \
+            "echo 'SSH OK'; pwd; ls -ld ~/public_html"
 
       - name: Backup current production
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USERNAME: ${{ secrets.DEPLOY_USER }}
+          PORT: ${{ secrets.DEPLOY_PORT }}
         run: |
-          ssh -o StrictHostKeyChecking=no "${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }}" "
-            rm -rf ~/public_html_backup && cp -r ~/public_html ~/public_html_backup
-          "
+          ssh -i ~/.ssh/deploy_key -p "$PORT" -o StrictHostKeyChecking=no \
+            "${{ secrets.DEPLOY_USER }}@$HOST" \
+            "rm -rf ~/public_html_backup && cp -r ~/public_html ~/public_html_backup"
           echo "Backup saved to ~/public_html_backup"
 
       - name: Deploy to production
         if: github.event_name != 'workflow_dispatch' || github.event.inputs.environment == 'production'
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USERNAME: ${{ secrets.DEPLOY_USER }}
+          PORT: ${{ secrets.DEPLOY_PORT }}
         run: |
           rsync -avz --delete \
+            -e "ssh -i ~/.ssh/deploy_key -p $PORT -o StrictHostKeyChecking=no" \
             --exclude='.git' \
             --exclude='.github' \
             --exclude='config/config.php' \
             --exclude='.env' \
             ./ \
-            "${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }}:~/public_html/"
+            "${{ secrets.DEPLOY_USER }}@$HOST:~/public_html/"
 
       - name: Deploy to staging
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging'
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USERNAME: ${{ secrets.DEPLOY_USER }}
+          PORT: ${{ secrets.DEPLOY_PORT }}
         run: |
           rsync -avz --delete \
+            -e "ssh -i ~/.ssh/deploy_key -p $PORT -o StrictHostKeyChecking=no" \
             --exclude='.git' \
             --exclude='.github' \
             --exclude='config/config.php' \
             --exclude='.env' \
             ./ \
-            "${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }}:~/public_html-staging/"
+            "${{ secrets.DEPLOY_USER }}@$HOST:~/public_html-staging/"
 
       - name: Health check
         run: |
