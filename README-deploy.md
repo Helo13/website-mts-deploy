@@ -130,3 +130,5 @@ npm run build
 ```
 
 Salin isi `frontend/dist/` ke `upload/`, lalu upload ulang isi `upload/` ke `public_html/`.
+
+<!-- trigger -->
