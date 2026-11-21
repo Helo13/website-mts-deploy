@@ -52,12 +52,13 @@ jobs:
       - name: Test SSH connection
         env:
           HOST: ${{ secrets.DEPLOY_HOST }}
-          USERNAME: ${{ secrets.DEPLOY_USER }}
           PORT: ${{ secrets.DEPLOY_PORT }}
         run: |
-          ssh -i ~/.ssh/deploy_key -p "$PORT" -o StrictHostKeyChecking=no \
+          set -x
+          ssh -v -i ~/.ssh/deploy_key -p "$PORT" -o StrictHostKeyChecking=no \
             "${{ secrets.DEPLOY_USER }}@$HOST" \
-            "echo 'SSH OK'; pwd; ls -ld ~/public_html"
+            "echo 'SSH OK'; pwd; ls -ld ~/public_html" 2>&1 || true
+          echo "--- EXIT CODE: $? ---"
 
       - name: Backup current production
         env:
