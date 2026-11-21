@@ -1,0 +1,24 @@
+# Git ignore for MTs Website
+
+# Config with secrets - DO NOT commit
+config/config.php
+
+# Environment
+.env
+.env.local
+
+# Uploads (user-generated content)
+uploads/berita/*
+uploads/karya/*
+uploads/profil/*
+uploads/beranda/*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace

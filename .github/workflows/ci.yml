@@ -1,0 +1,47 @@
+name: CI MTs Website
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: PHP syntax check
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y php-cli php-sqlite3
+          for f in api/**/*.php config/**/*.php *.php; do
+            [ -f "$f" ] || continue
+            php -l "$f"
+          done
+
+      - name: SQL syntax check
+        run: |
+          sudo apt-get install -y sqlite3
+          for f in schema.sql seed.sql migration_class_name.sql cleanup_dummy_data.sql; do
+            [ -f "$f" ] || continue
+            sqlite3 :memory: < "$f" || { echo "SQL ERROR in $f"; exit 1; }
+          done
+
+      - name: JS syntax check
+        run: |
+          sudo apt-get install -y nodejs npm
+          npx eslint --no-eslintrc --parser-options=ecmaVersion:2020 assets/index-BQn7hPW4.js || true
+          node --check assets/index-BQn7hPW4.js
+
+  db-migrate:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install MariaDB + import schema
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y mariadb-server
+          sudo service mariadb start
+          sudo mysql -e "CREATE DATABASE IF NOT EXISTS ci_test; GRANT ALL ON ci_test.* TO 'ci'@'localhost' IDENTIFIED BY 'ci'; FLUSH PRIVILEGES;"
+          sudo mysql -u ci -pci ci_test < schema.sql
+          sudo mysql -u ci -pci ci_test < seed.sql
