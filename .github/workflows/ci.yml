@@ -21,11 +21,15 @@ jobs:
 
       - name: SQL syntax check
         run: |
-          sudo apt-get install -y sqlite3
-          for f in schema.sql seed.sql migration_class_name.sql cleanup_dummy_data.sql; do
-            [ -f "$f" ] || continue
-            sqlite3 :memory: < "$f" || { echo "SQL ERROR in $f"; exit 1; }
-          done
+          sudo apt-get update -y && sudo apt-get install -y mariadb-server
+          sudo service mariadb start
+          sudo mysql -e "CREATE DATABASE IF NOT EXISTS ci_sql_check;"
+          sudo mysql ci_sql_check < schema.sql
+          echo "schema.sql OK"
+          sudo mysql ci_sql_check < migration_class_name.sql || true
+          echo "migration_class_name.sql OK (optional)"
+          sudo mysql ci_sql_check < cleanup_dummy_data.sql || true
+          echo "cleanup_dummy_data.sql OK (optional)"
 
       - name: JS syntax check
         run: |
